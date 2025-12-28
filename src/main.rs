@@ -1,8 +1,7 @@
-use core::task;
 use std::{collections::HashMap, fs, str::FromStr};
 
-use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
-use clap::{arg, builder, command, error::ErrorKind, value_parser, ArgAction, ArgMatches, Command};
+use chrono::{Datelike, Local, NaiveDate};
+use clap::{arg, builder, value_parser, ArgMatches, Command};
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use rusqlite::{
     types::{FromSql, ToSqlOutput},
@@ -26,12 +25,6 @@ struct Task {
     description: String,
     status: Status,
     date: String,
-}
-
-#[derive(Debug)]
-struct GroupedTasks {
-    date: String,
-    tasks: Vec<Task>,
 }
 
 impl ToSql for Status {
@@ -142,10 +135,6 @@ fn construct_timestamp(arg_matches: &ArgMatches) -> NaiveDate {
     timestamp
 }
 
-fn display_format_timestamp(timestamp: &NaiveDate) -> String {
-    format!("{}", timestamp.format("%d/%m/%Y"))
-}
-
 fn iso_format_timestamp(timestamp: &NaiveDate) -> String {
     // iso date format by chrono
     // date + time
@@ -193,8 +182,6 @@ fn render_tasks_table(grouped_tasks: &Vec<(&String, &Vec<Task>)>) {
             } else {
                 date
             };
-
-            println!("{date} {display_date}");
 
             tasks_table.add_row(vec![
                 Cell::new(display_date),
