@@ -1,16 +1,30 @@
-use std::fs;
+use std::{collections::HashMap, fs, str::FromStr};
 
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use clap::{arg, builder, command, error::ErrorKind, value_parser, ArgAction, ArgMatches, Command};
-use rusqlite::{types::ToSqlOutput, Connection, Error, ToSql};
-use strum::Display;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
+use rusqlite::{
+    types::{FromSql, ToSqlOutput},
+    Connection, Error, ToSql,
+};
+use strum::{Display, EnumString};
 use ulid::Ulid;
 
-#[derive(Display)]
+#[derive(Display, EnumString, Debug)]
 #[strum(serialize_all = "snake_case")]
 enum Status {
     Todo,
-    Completed,
+    InProgress,
+    Done,
+    Blocked,
+}
+
+#[derive(Debug)]
+struct Task {
+    id: String,
+    description: String,
+    status: Status,
+    date: String,
 }
 
 impl ToSql for Status {
@@ -26,6 +40,12 @@ impl ToSql for Status {
      * */
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl FromSql for Status {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        value.as_str().map(|s| Status::from_str(s).unwrap())
     }
 }
 
@@ -63,8 +83,8 @@ fn create_task_table(conn: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
-fn construct_timestamp(arg_matches: &ArgMatches) -> DateTime<Utc> {
-    let mut timestamp = Utc::now();
+fn construct_timestamp(arg_matches: &ArgMatches) -> NaiveDate {
+    let mut timestamp = Local::now().date_naive();
     /*
      * reason of this year to day approach is only for day case
      * as no. of day will depend on the month
@@ -115,17 +135,75 @@ fn construct_timestamp(arg_matches: &ArgMatches) -> DateTime<Utc> {
     timestamp
 }
 
-fn display_format_timestamp(timestamp: &DateTime<Utc>) -> String {
+fn display_format_timestamp(timestamp: &NaiveDate) -> String {
     format!("{}", timestamp.format("%d/%m/%Y"))
 }
 
-fn iso_format_timestamp(timestamp: &DateTime<Utc>) -> String {
+fn iso_format_timestamp(timestamp: &NaiveDate) -> String {
     // iso date format by chrono
     // date + time
     // let formatted_timestamp = format!("{}", timestamp.format("%+"));
 
     // only date
     format!("{}", timestamp.format("%F"))
+}
+
+fn render_tasks_table(tasks: &Vec<Task>) {
+    let mut tasks_table = Table::new();
+
+    tasks_table
+        .load_preset(comfy_table::presets::ASCII_FULL_CONDENSED)
+        .set_content_arrangement(ContentArrangement::DynamicFullWidth)
+        .set_width(100);
+
+    tasks_table.set_header(vec![
+        Cell::new("  Description  ")
+            .fg(Color::Rgb {
+                r: 205,
+                g: 214,
+                b: 244,
+            })
+            .bg(Color::Rgb {
+                r: 49,
+                g: 50,
+                b: 68,
+            })
+            .add_attribute(Attribute::Bold),
+        Cell::new("  Status  ")
+            .fg(Color::Rgb {
+                r: 205,
+                g: 214,
+                b: 244,
+            })
+            .bg(Color::Rgb {
+                r: 49,
+                g: 50,
+                b: 68,
+            })
+            .add_attribute(Attribute::Bold),
+        Cell::new("  Id  ")
+            .fg(Color::Rgb {
+                r: 205,
+                g: 214,
+                b: 244,
+            })
+            .bg(Color::Rgb {
+                r: 49,
+                g: 50,
+                b: 68,
+            })
+            .add_attribute(Attribute::Bold),
+    ]);
+
+    for task in tasks.iter() {
+        tasks_table.add_row(vec![
+            Cell::new(&task.description).fg(Color::Red),
+            Cell::new(&task.status),
+            Cell::new(&task.id),
+        ]);
+    }
+
+    println!("{tasks_table}");
 }
 
 fn main() -> Result<(), Box<Error>> {
@@ -140,10 +218,7 @@ fn main() -> Result<(), Box<Error>> {
             Command::new("list")
                 .about("List multiple standups based on timeline")
                 .args([
-                    arg!(--week <WEEK_NO> "List standups for specified week (eg. 1, 2, 3)")
-                        .value_parser(value_parser!(u32).range(1..=4))
-                        .required(false),
-                    arg!(--month <MONTH_NO> "List standups for specified month (eg. 1, 2, 3)")
+                    arg!(-m --month <MONTH_NO> "List standups for specified month (eg. 1, 2, 3)")
                         .value_parser(value_parser!(u32).range(1..=12))
                         .required(false),
                     arg!(-l --limit <LIMIT> "Limit no. of standups in result")
@@ -215,12 +290,62 @@ fn main() -> Result<(), Box<Error>> {
         .get_matches();
 
     if let Some(list_sub_cmd_matches) = cmd_matches.subcommand_matches("list") {
-        if let Some(week) = list_sub_cmd_matches.get_one::<u8>("week") {
-            println!("week = {}", week);
+        let mut now = Local::now().date_naive();
+
+        if let Some(month_no) = list_sub_cmd_matches.get_one::<u32>("month") {
+            now = now.with_month(*month_no).expect("Invalid month");
         }
 
-        if let Some(month) = list_sub_cmd_matches.get_one::<u8>("month") {
-            println!("month = {}", month);
+        let first_day_of_month = now.with_day(1).expect("Internal Error: Invalid day");
+
+        // https://docs.rs/rusqlite/latest/rusqlite/struct.Statement.html#use-with-positional-parameters-1
+        let mut stmt = db_conn.prepare(
+            "SELECT id, description, status, date FROM tasks WHERE date BETWEEN :start_date AND :end_date ORDER BY date DESC",
+        )?;
+
+        let rows = stmt.query_map(
+            [
+                iso_format_timestamp(&first_day_of_month),
+                iso_format_timestamp(&now),
+            ],
+            |row| {
+                Ok(Task {
+                    id: row.get(0)?,
+                    description: row.get(1)?,
+                    status: row.get(2)?,
+                    date: row.get(3)?,
+                })
+            },
+        )?;
+
+        let mut grouped_tasks: HashMap<String, Vec<Task>> = HashMap::new();
+        for r in rows {
+            match r {
+                Ok(task) => {
+                    if grouped_tasks.contains_key(&task.date) {
+                        let task_list = grouped_tasks.get_mut(&task.date);
+
+                        match task_list {
+                            Some(list) => {
+                                list.push(task);
+                            }
+                            None => {
+                                grouped_tasks.insert(task.date.clone(), vec![task]);
+                            }
+                        }
+                    } else {
+                        grouped_tasks.insert(task.date.clone(), vec![task]);
+                    }
+                }
+                Err(err) => {
+                    println!("Error accessing row = {:?}", err);
+                    continue;
+                }
+            }
+        }
+
+        for (date, tasks) in grouped_tasks.into_iter() {
+            render_tasks_table(&tasks);
         }
     }
 
@@ -237,15 +362,11 @@ fn main() -> Result<(), Box<Error>> {
 
         let timestamp = construct_timestamp(add_sub_cmd_matches);
 
-        let display_formatted_timestamp = display_format_timestamp(&timestamp);
-        println!("Timestamp = {}", &display_formatted_timestamp);
-
         let iso_timestamp = iso_format_timestamp(&timestamp);
-        println!("ISO Timestamp = {}", &iso_timestamp);
 
         let uid = Ulid::new();
 
-        db_conn.execute(
+        if let Err(error) = db_conn.execute(
             "insert into tasks (id, description, status, date) values (?1, ?2, ?3, ?4)",
             (
                 &uid.to_string(),
@@ -253,7 +374,9 @@ fn main() -> Result<(), Box<Error>> {
                 Status::Todo,
                 &iso_timestamp,
             ),
-        )?;
+        ) {
+            println!("Error inserting new task = {:?}", error);
+        }
     }
 
     if let Some(update_sub_cmd_matches) = cmd_matches.subcommand_matches("update") {
