@@ -27,6 +27,12 @@ struct Task {
     date: String,
 }
 
+#[derive(Debug)]
+struct GroupedTasks {
+    date: String,
+    tasks: Vec<Task>,
+}
+
 impl ToSql for Status {
     /*
      * i received 'trait bound not satisfied error'
@@ -148,7 +154,7 @@ fn iso_format_timestamp(timestamp: &NaiveDate) -> String {
     format!("{}", timestamp.format("%F"))
 }
 
-fn render_tasks_table(tasks: &Vec<Task>) {
+fn render_tasks_table(tasks: &[Task]) {
     let mut tasks_table = Table::new();
 
     tasks_table
@@ -156,43 +162,25 @@ fn render_tasks_table(tasks: &Vec<Task>) {
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .set_width(100);
 
+    let header_cell = |title: &str| {
+        Cell::new(title)
+            .fg(Color::Rgb {
+                r: 205,
+                g: 214,
+                b: 244,
+            })
+            .bg(Color::Rgb {
+                r: 49,
+                g: 50,
+                b: 68,
+            })
+            .add_attribute(Attribute::Bold)
+    };
+
     tasks_table.set_header(vec![
-        Cell::new("  Description  ")
-            .fg(Color::Rgb {
-                r: 205,
-                g: 214,
-                b: 244,
-            })
-            .bg(Color::Rgb {
-                r: 49,
-                g: 50,
-                b: 68,
-            })
-            .add_attribute(Attribute::Bold),
-        Cell::new("  Status  ")
-            .fg(Color::Rgb {
-                r: 205,
-                g: 214,
-                b: 244,
-            })
-            .bg(Color::Rgb {
-                r: 49,
-                g: 50,
-                b: 68,
-            })
-            .add_attribute(Attribute::Bold),
-        Cell::new("  Id  ")
-            .fg(Color::Rgb {
-                r: 205,
-                g: 214,
-                b: 244,
-            })
-            .bg(Color::Rgb {
-                r: 49,
-                g: 50,
-                b: 68,
-            })
-            .add_attribute(Attribute::Bold),
+        header_cell(" Description "),
+        header_cell(" Status "),
+        header_cell(" Id "),
     ]);
 
     for task in tasks.iter() {
@@ -318,23 +306,23 @@ fn main() -> Result<(), Box<Error>> {
             },
         )?;
 
-        let mut grouped_tasks: HashMap<String, Vec<Task>> = HashMap::new();
+        let mut date_tasks_map: HashMap<String, Vec<Task>> = HashMap::new();
         for r in rows {
             match r {
                 Ok(task) => {
-                    if grouped_tasks.contains_key(&task.date) {
-                        let task_list = grouped_tasks.get_mut(&task.date);
+                    if date_tasks_map.contains_key(&task.date) {
+                        let task_list = date_tasks_map.get_mut(&task.date);
 
                         match task_list {
                             Some(list) => {
                                 list.push(task);
                             }
                             None => {
-                                grouped_tasks.insert(task.date.clone(), vec![task]);
+                                date_tasks_map.insert(task.date.clone(), vec![task]);
                             }
                         }
                     } else {
-                        grouped_tasks.insert(task.date.clone(), vec![task]);
+                        date_tasks_map.insert(task.date.clone(), vec![task]);
                     }
                 }
                 Err(err) => {
@@ -344,8 +332,13 @@ fn main() -> Result<(), Box<Error>> {
             }
         }
 
-        for (date, tasks) in grouped_tasks.into_iter() {
-            render_tasks_table(&tasks);
+        let mut task_grouped_by_date: Vec<(&String, &Vec<Task>)> = date_tasks_map.iter().collect();
+
+        // sorting by date
+        task_grouped_by_date.sort_by(|a, b| b.0.cmp(a.0));
+
+        for (_, tasks) in task_grouped_by_date.iter() {
+            render_tasks_table(tasks);
         }
     }
 
