@@ -1,3 +1,4 @@
+use core::task;
 use std::{collections::HashMap, fs, str::FromStr};
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
@@ -154,11 +155,11 @@ fn iso_format_timestamp(timestamp: &NaiveDate) -> String {
     format!("{}", timestamp.format("%F"))
 }
 
-fn render_tasks_table(tasks: &[Task]) {
+fn render_tasks_table(grouped_tasks: &Vec<(&String, &Vec<Task>)>) {
     let mut tasks_table = Table::new();
 
     tasks_table
-        .load_preset(comfy_table::presets::ASCII_FULL_CONDENSED)
+        .load_preset(comfy_table::presets::ASCII_FULL)
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .set_width(100);
 
@@ -178,17 +179,32 @@ fn render_tasks_table(tasks: &[Task]) {
     };
 
     tasks_table.set_header(vec![
+        header_cell(" Date "),
         header_cell(" Description "),
         header_cell(" Status "),
         header_cell(" Id "),
     ]);
 
-    for task in tasks.iter() {
-        tasks_table.add_row(vec![
-            Cell::new(&task.description).fg(Color::Red),
-            Cell::new(&task.status),
-            Cell::new(&task.id),
-        ]);
+    let mut last_used_date = "";
+    for (date, tasks) in grouped_tasks.iter() {
+        for task in tasks.iter() {
+            let display_date = if date.as_str() == last_used_date {
+                ""
+            } else {
+                date
+            };
+
+            println!("{date} {display_date}");
+
+            tasks_table.add_row(vec![
+                Cell::new(display_date),
+                Cell::new(&task.description).fg(Color::Red),
+                Cell::new(&task.status),
+                Cell::new(&task.id),
+            ]);
+
+            last_used_date = date;
+        }
     }
 
     println!("{tasks_table}");
@@ -337,9 +353,7 @@ fn main() -> Result<(), Box<Error>> {
         // sorting by date
         task_grouped_by_date.sort_by(|a, b| b.0.cmp(a.0));
 
-        for (_, tasks) in task_grouped_by_date.iter() {
-            render_tasks_table(tasks);
-        }
+        render_tasks_table(&task_grouped_by_date);
     }
 
     if let Some(show_sub_cmd_matches) = cmd_matches.subcommand_matches("show") {
