@@ -344,8 +344,32 @@ fn main() -> Result<(), Box<Error>> {
     }
 
     if let Some(show_sub_cmd_matches) = cmd_matches.subcommand_matches("show") {
-        // list matches
-        println!("Show sub command matches = {:?}", show_sub_cmd_matches);
+        let timestamp = construct_timestamp(&show_sub_cmd_matches);
+
+        // https://docs.rs/rusqlite/latest/rusqlite/struct.Statement.html#use-with-positional-parameters-1
+        let mut stmt =
+            db_conn.prepare("SELECT id, description, status, date FROM tasks WHERE date = ?1")?;
+
+        let iso_timestamp = iso_format_timestamp(&timestamp);
+
+        let rows = stmt.query_map([&iso_timestamp], |row| {
+            Ok(Task {
+                id: row.get(0)?,
+                description: row.get(1)?,
+                status: row.get(2)?,
+                date: row.get(3)?,
+            })
+        })?;
+
+        let mut tasks: Vec<Task> = vec![];
+
+        for r in rows {
+            if let Ok(task) = r {
+                tasks.push(task);
+            }
+        }
+
+        render_tasks_table(&vec![(&iso_timestamp, &tasks)]);
     }
 
     if let Some(add_sub_cmd_matches) = cmd_matches.subcommand_matches("add") {
