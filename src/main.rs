@@ -4,6 +4,7 @@ use chrono::{Datelike, Local, NaiveDate};
 use clap::{arg, builder, value_parser, Arg, ArgMatches, Command};
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use rusqlite::{
+    named_params,
     types::{FromSql, ToSqlOutput},
     Connection, Error, ToSql,
 };
@@ -370,8 +371,9 @@ fn main() -> Result<(), Box<Error>> {
 
         let get_include_id_flag = show_sub_cmd_matches.get_flag("include-id");
         // https://docs.rs/rusqlite/latest/rusqlite/struct.Statement.html#use-with-positional-parameters-1
-        let mut stmt =
-            db_conn.prepare("SELECT id, description, status, date FROM tasks WHERE date = ?1")?;
+        let mut stmt = db_conn.prepare(
+            "SELECT id, description, status, date FROM tasks WHERE date = ?1 ORDER BY id",
+        )?;
 
         let iso_timestamp = iso_format_timestamp(&timestamp);
 
@@ -426,12 +428,93 @@ fn main() -> Result<(), Box<Error>> {
     }
 
     if let Some(mark_sub_cmd_matches) = cmd_matches.subcommand_matches("mark") {
-        println!("Mark sub command matches = {:?}", mark_sub_cmd_matches);
+        let now = Local::now().date_naive();
+
+        let task_index = mark_sub_cmd_matches
+            .get_one::<u8>("TASK_INDEX")
+            .expect("Tasks Index is required");
+
+        let mut stmt = db_conn.prepare(
+            "SELECT id, description, status, date FROM tasks WHERE date = ?1 ORDER BY id",
+        )?;
+
+        let iso_timestamp = iso_format_timestamp(&now);
+
+        let rows = stmt.query_map([&iso_timestamp], |row| {
+            Ok(Task {
+                id: row.get(0)?,
+                description: row.get(1)?,
+                status: row.get(2)?,
+                date: row.get(3)?,
+            })
+        })?;
+
+        let mut tasks: Vec<Task> = vec![];
+
+        for r in rows {
+            if let Ok(task) = r {
+                tasks.push(task);
+            }
+        }
+
+        let selected_row = tasks
+            .get(*task_index as usize - 1)
+            .expect("Error: Index outbound");
+
+        let response = db_conn.execute(
+            "UPDATE tasks SET status = :status WHERE id = :id",
+            named_params! {
+                ":status": Status::Done,
+                ":id": selected_row.id
+            },
+        )?;
+
+        println!("Marking done successfully = {response}");
     }
 
     if let Some(unmark_sub_cmd_matches) = cmd_matches.subcommand_matches("unmark") {
-        // list matches
-        println!("Unmark sub command matches = {:?}", unmark_sub_cmd_matches);
+        let now = Local::now().date_naive();
+
+        let task_index = unmark_sub_cmd_matches
+            .get_one::<u8>("TASK_INDEX")
+            .expect("Tasks Index is required");
+
+        let mut stmt = db_conn.prepare(
+            "SELECT id, description, status, date FROM tasks WHERE date = ?1 ORDER BY id",
+        )?;
+
+        let iso_timestamp = iso_format_timestamp(&now);
+
+        let rows = stmt.query_map([&iso_timestamp], |row| {
+            Ok(Task {
+                id: row.get(0)?,
+                description: row.get(1)?,
+                status: row.get(2)?,
+                date: row.get(3)?,
+            })
+        })?;
+
+        let mut tasks: Vec<Task> = vec![];
+
+        for r in rows {
+            if let Ok(task) = r {
+                tasks.push(task);
+            }
+        }
+
+        let selected_row = tasks
+            .get(*task_index as usize - 1)
+            .expect("Error: Index outbound");
+
+        let response = db_conn.execute(
+            "UPDATE tasks SET status = :status WHERE id = :id",
+            named_params! {
+                ":status": Status::Todo,
+                ":id": selected_row.id
+            },
+        )?;
+
+        println!("Unmarking done successfully = {response}");
     }
 
     if let Some(deleted_sub_cmd_matches) = cmd_matches.subcommand_matches("delete") {
