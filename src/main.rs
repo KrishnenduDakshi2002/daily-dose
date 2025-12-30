@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs, str::FromStr};
 
 use chrono::{Datelike, Local, NaiveDate};
-use clap::{arg, builder, value_parser, ArgMatches, Command};
+use clap::{arg, builder, value_parser, Arg, ArgMatches, Command};
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use rusqlite::{
     types::{FromSql, ToSqlOutput},
@@ -144,7 +144,7 @@ fn iso_format_timestamp(timestamp: &NaiveDate) -> String {
     format!("{}", timestamp.format("%F"))
 }
 
-fn render_tasks_table(grouped_tasks: &Vec<(&String, &Vec<Task>)>) {
+fn render_tasks_table(grouped_tasks: &Vec<(&String, &Vec<Task>)>, include_id: bool) {
     let mut tasks_table = Table::new();
 
     tasks_table
@@ -167,28 +167,42 @@ fn render_tasks_table(grouped_tasks: &Vec<(&String, &Vec<Task>)>) {
             .add_attribute(Attribute::Bold)
     };
 
-    tasks_table.set_header(vec![
+    let mut headers = vec![
         header_cell(" Date "),
         header_cell(" Description "),
         header_cell(" Status "),
-        header_cell(" Id "),
-    ]);
+    ];
+
+    if include_id {
+        headers.push(header_cell(" ID "));
+    } else {
+        headers.push(header_cell(" Idx "));
+    }
+
+    tasks_table.set_header(headers);
 
     let mut last_used_date = "";
     for (date, tasks) in grouped_tasks.iter() {
-        for task in tasks.iter() {
+        for (index, task) in tasks.iter().enumerate() {
             let display_date = if date.as_str() == last_used_date {
                 ""
             } else {
                 date
             };
 
-            tasks_table.add_row(vec![
+            let mut cells = vec![
                 Cell::new(display_date),
                 Cell::new(&task.description).fg(Color::Red),
                 Cell::new(&task.status),
-                Cell::new(&task.id),
-            ]);
+            ];
+
+            if include_id {
+                cells.push(Cell::new(&task.id));
+            } else {
+                cells.push(Cell::new(index + 1));
+            }
+
+            tasks_table.add_row(cells);
 
             last_used_date = date;
         }
@@ -218,6 +232,9 @@ fn main() -> Result<(), Box<Error>> {
                     arg!(-s --search <QUERY> "Search query(task) for searching")
                         .value_parser(builder::NonEmptyStringValueParser::new())
                         .required(false),
+                    Arg::new("include-id")
+                        .long("include-id")
+                        .action(clap::ArgAction::SetTrue),
                 ]),
             Command::new("show")
                 .about("Show tasks for any specific date")
@@ -231,6 +248,9 @@ fn main() -> Result<(), Box<Error>> {
                     arg!(-y --year <YEAR_NO> "Year for which fetching standup")
                         .value_parser(value_parser!(u32).range(1978..))
                         .required(false),
+                    Arg::new("include-id")
+                        .long("include-id")
+                        .action(clap::ArgAction::SetTrue),
                 ]),
             Command::new("add")
                 .about("Add a task to current or specific date's standup task list")
@@ -282,6 +302,8 @@ fn main() -> Result<(), Box<Error>> {
 
     if let Some(list_sub_cmd_matches) = cmd_matches.subcommand_matches("list") {
         let mut now = Local::now().date_naive();
+
+        let get_include_id_flag = list_sub_cmd_matches.get_flag("include-id");
 
         if let Some(month_no) = list_sub_cmd_matches.get_one::<u32>("month") {
             now = now.with_month(*month_no).expect("Invalid month");
@@ -340,12 +362,13 @@ fn main() -> Result<(), Box<Error>> {
         // sorting by date
         task_grouped_by_date.sort_by(|a, b| b.0.cmp(a.0));
 
-        render_tasks_table(&task_grouped_by_date);
+        render_tasks_table(&task_grouped_by_date, get_include_id_flag);
     }
 
     if let Some(show_sub_cmd_matches) = cmd_matches.subcommand_matches("show") {
         let timestamp = construct_timestamp(&show_sub_cmd_matches);
 
+        let get_include_id_flag = show_sub_cmd_matches.get_flag("include-id");
         // https://docs.rs/rusqlite/latest/rusqlite/struct.Statement.html#use-with-positional-parameters-1
         let mut stmt =
             db_conn.prepare("SELECT id, description, status, date FROM tasks WHERE date = ?1")?;
@@ -369,7 +392,7 @@ fn main() -> Result<(), Box<Error>> {
             }
         }
 
-        render_tasks_table(&vec![(&iso_timestamp, &tasks)]);
+        render_tasks_table(&vec![(&iso_timestamp, &tasks)], get_include_id_flag);
     }
 
     if let Some(add_sub_cmd_matches) = cmd_matches.subcommand_matches("add") {
@@ -403,7 +426,6 @@ fn main() -> Result<(), Box<Error>> {
     }
 
     if let Some(mark_sub_cmd_matches) = cmd_matches.subcommand_matches("mark") {
-        // list matches
         println!("Mark sub command matches = {:?}", mark_sub_cmd_matches);
     }
 
