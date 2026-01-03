@@ -1,8 +1,6 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
-use chrono::{Datelike, Local};
 use rusqlite::{
-    named_params,
     types::{FromSql, ToSqlOutput},
     Error, ToSql,
 };
@@ -13,8 +11,8 @@ use crate::{
         construct_cmd_args, handle_cmd_add, handle_cmd_delete, handle_cmd_list, handle_cmd_mark,
         handle_cmd_show, handle_cmd_unmark, handle_cmd_update,
     },
-    database::{create_task_table, get_tasks_by_date, insert_task, open_db_connection},
-    utils::{construct_timestamp, iso_format_timestamp, render_tasks_table},
+    database::{create_task_table, open_db_connection},
+    utils::render_tasks_table,
 };
 
 mod cmd_handler;

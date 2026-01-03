@@ -168,11 +168,11 @@ pub fn handle_cmd_add(arg_matches: &ArgMatches, db_conn: &Connection) {
     }
 }
 
-pub fn handle_cmd_update(arg_matches: &ArgMatches, db_conn: &Connection) {
+pub fn handle_cmd_update(arg_matches: &ArgMatches, _db_conn: &Connection) {
     println!("Update sub command matches = {:?}", arg_matches);
 }
 
-pub fn handle_cmd_delete(arg_matches: &ArgMatches, db_conn: &Connection) {
+pub fn handle_cmd_delete(arg_matches: &ArgMatches, _db_conn: &Connection) {
     println!("Deleted sub command matches = {:?}", arg_matches);
 }
 

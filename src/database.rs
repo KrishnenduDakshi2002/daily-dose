@@ -95,7 +95,7 @@ pub fn get_tasks_by_date(
     Ok(tasks)
 }
 
-pub fn update_task_description(
+pub fn _update_task_description(
     db_conn: &Connection,
     task_id: &str,
     desc: &str,
