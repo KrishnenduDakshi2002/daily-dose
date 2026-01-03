@@ -63,6 +63,8 @@ pub fn construct_cmd_args() -> Command {
                     arg!(-y --year <YEAR_NO> "Year for which fetching standup")
                         .value_parser(value_parser!(u32).range(1978..))
                         .required(false),
+                    arg!(--done "Mark the task as done by default else will be marked todo")
+                        .action(clap::ArgAction::SetTrue),
                 ]),
             Command::new("update")
                 .about("Update a task based on task id")
@@ -157,13 +159,18 @@ pub fn handle_cmd_add(arg_matches: &ArgMatches, db_conn: &Connection) {
     let task_description = arg_matches
         .get_one::<String>("TASK")
         .expect("Task description is required for add");
-    println!("Task description = {}", task_description);
+
+    let task_status = if arg_matches.get_flag("done") {
+        Status::Done
+    } else {
+        Status::Todo
+    };
 
     let timestamp = construct_timestamp(arg_matches);
 
     let iso_timestamp = iso_format_timestamp(&timestamp);
 
-    if let Err(error) = insert_task(db_conn, task_description, Status::Todo, &iso_timestamp) {
+    if let Err(error) = insert_task(db_conn, task_description, task_status, &iso_timestamp) {
         println!("Error inserting new task = {:?}", error);
     }
 }
