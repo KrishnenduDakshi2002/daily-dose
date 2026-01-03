@@ -5,7 +5,9 @@ use clap::{arg, builder, value_parser, Arg, ArgMatches, Command};
 use rusqlite::Connection;
 
 use crate::{
-    database::{get_tasks_by_date, insert_task, update_task_status},
+    database::{
+        delete_task, get_tasks_by_date, insert_task, update_task_description, update_task_status,
+    },
     render_tasks_table,
     utils::{construct_timestamp, iso_format_timestamp},
     Status, Task,
@@ -73,7 +75,8 @@ pub fn construct_cmd_args() -> Command {
                         .value_parser(builder::NonEmptyStringValueParser::new())
                         .required(true),
                     arg!(--id <TASK_ID> "Task ID to update on")
-                        .value_parser(builder::NonEmptyStringValueParser::new()),
+                        .value_parser(builder::NonEmptyStringValueParser::new())
+                        .required(true),
                 ]),
             Command::new("mark")
                 .about("Mark today's specific task as done")
@@ -175,12 +178,28 @@ pub fn handle_cmd_add(arg_matches: &ArgMatches, db_conn: &Connection) {
     }
 }
 
-pub fn handle_cmd_update(arg_matches: &ArgMatches, _db_conn: &Connection) {
-    println!("Update sub command matches = {:?}", arg_matches);
+pub fn handle_cmd_update(arg_matches: &ArgMatches, db_conn: &Connection) {
+    let task_description = arg_matches
+        .get_one::<String>("TASK")
+        .expect("Task description is required for add");
+
+    let task_id = arg_matches
+        .get_one::<String>("id")
+        .expect("Task ID is required");
+
+    if let Err(error) = update_task_description(db_conn, task_id, task_description) {
+        println!("Error updating task = {:?}", error);
+    }
 }
 
-pub fn handle_cmd_delete(arg_matches: &ArgMatches, _db_conn: &Connection) {
-    println!("Deleted sub command matches = {:?}", arg_matches);
+pub fn handle_cmd_delete(arg_matches: &ArgMatches, db_conn: &Connection) {
+    let task_id = arg_matches
+        .get_one::<String>("id")
+        .expect("Task ID is required");
+
+    if let Err(error) = delete_task(db_conn, task_id) {
+        println!("Error deleting task = {:?}", error);
+    }
 }
 
 pub fn handle_cmd_mark(arg_matches: &ArgMatches, db_conn: &Connection) {

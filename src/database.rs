@@ -70,7 +70,7 @@ pub fn get_tasks_by_date(
                 ":end_date": end_date.to_string(),
             })
         },
-        None => ("SELECT id, description, status, date FROM tasks WHERE date = :start_ ORDER BY id", named_params! {
+        None => ("SELECT id, description, status, date FROM tasks WHERE date = :start_date ORDER BY id", named_params! {
                 ":start_date": start_date,
         }),
     };
@@ -95,7 +95,7 @@ pub fn get_tasks_by_date(
     Ok(tasks)
 }
 
-pub fn _update_task_description(
+pub fn update_task_description(
     db_conn: &Connection,
     task_id: &str,
     desc: &str,
@@ -119,6 +119,17 @@ pub fn update_task_status(
         "UPDATE tasks SET status = :status WHERE id = :id",
         named_params! {
             ":status": status,
+            ":id":task_id
+        },
+    )?;
+
+    Ok(())
+}
+
+pub fn delete_task(db_conn: &Connection, task_id: &str) -> Result<(), Error> {
+    db_conn.execute(
+        "delete from tasks where id = :id",
+        named_params! {
             ":id":task_id
         },
     )?;
